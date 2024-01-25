@@ -28,6 +28,9 @@
 #include <Battery.h>
 
 // Battery level reading - IO34
+// Lego battery pack with 6xAAA:
+// Full voltage: 9V
+// Min voltage: 5.4V
 Battery battery(5400, 9000, 34);
 
 #include <RemoteXY.h>
@@ -119,11 +122,15 @@ void setup()
 
     Serial.begin(115200);
 
+    // Battery reading expects 10bit (0-1024) ADC
+    // We have to change from default value (12bit)
     analogReadResolution(10);
     analogSetWidth(10);
 
     // Battery level
-    float ratio = (16.2 + 9.3) / 9.3;
+    // We have resistor devider with 16.2K and 9.31K
+    // float ratio = (16.2 + 9.3) / 9.3;
+    float ratio = 2.7400;
     battery.begin(3300, ratio);
 
     // TODO you setup code
@@ -169,10 +176,4 @@ void loop()
         state.direction = RemoteXY.direction;
         state.speed = RemoteXY.speed;
     }
-
-    Serial.print("Battery voltage is ");
-    Serial.print(battery.voltage());
-    Serial.print("mV (");
-    Serial.print(battery.level());
-    Serial.println("%)");
 }
