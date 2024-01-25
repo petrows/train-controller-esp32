@@ -1,28 +1,8 @@
 /*
-   -- New project --
+   Train controller board v1
 
-   This source code of graphical user interface
-   has been generated automatically by RemoteXY editor.
-   To compile this code using RemoteXY library 3.1.11 or later version
-   download by link http://remotexy.com/en/library/
-   To connect using RemoteXY mobile app by link http://remotexy.com/en/download/
-     - for ANDROID 4.11.4 or later version;
-     - for iOS 1.9.1 or later version;
-
-   This source code is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Lesser General Public
-   License as published by the Free Software Foundation; either
-   version 2.1 of the License, or (at your option) any later version.
+   https://petro.ws/
 */
-
-//////////////////////////////////////////////
-//        RemoteXY include library          //
-//////////////////////////////////////////////
-
-// определение режима соединения и подключение библиотеки RemoteXY
-#define REMOTEXY_MODE__ESP32CORE_BLE
-#include <BLEDevice.h>
-#include <WiFi.h>
 
 // Battery sense lib
 #include <Battery.h>
@@ -32,8 +12,10 @@
 // Full voltage: 9V
 // Min voltage: 5.4V
 Battery battery(5400, 9000, 34);
-
-#include <RemoteXY.h>
+// Time when battery was read
+unsigned long battery_read_ms = 0;
+// How often to read value (ms)
+#define BATTERY_READ_TIMOUT_MS 60000
 
 #define LED 16
 #define MOTOR_A_FW 18
@@ -48,17 +30,29 @@ Battery battery(5400, 9000, 34);
 // ESP32 PWM config
 // Motors:
 #define PWM_FREQ 1000 // PWM frequency of 1 KHz
-#define PWM_RES  8    // 8-bit resolution, 256 possible values
+#define PWM_RES 8     // 8-bit resolution, 256 possible values
 // Buzzer:
 #define BUZZER_FREQ 500
 #define BUZZER_RES 8
 
-// настройки соединения
+//////////////////////////////////////////////
+//        RemoteXY include library          //
+//////////////////////////////////////////////
+
+// RemoteXY library
+// ESP32: BLE mode
+#define REMOTEXY_MODE__ESP32CORE_BLE
+#include <BLEDevice.h>
+#include <WiFi.h>
+
+#include <RemoteXY.h>
+
+// Bluetooth name (generated from MAC)
 #define REMOTEXY_BLUETOOTH_NAME ble_device()
 
-// конфигурация интерфейса
+// RemoteXY UI config (uploaded to device)
 #pragma pack(push, 1)
-uint8_t RemoteXY_CONF[] = // 101 bytes
+    uint8_t RemoteXY_CONF[] = // 101 bytes
     {255, 4, 0, 1, 0, 94, 0, 16, 8, 1, 4, 0, 48, 4, 10, 89, 2, 16, 10, 121,
      6, 60, 14, 14, 4, 26, 31, 76, 0, 31, 1, 9, 28, 60, 15, 14, 2, 31, 72, 0,
      2, 0, 12, 82, 22, 11, 2, 26, 31, 31, 70, 87, 0, 82, 0, 71, 56, 6, 12, 37,
@@ -66,17 +60,17 @@ uint8_t RemoteXY_CONF[] = // 101 bytes
      65, 0, 0, 0, 64, 31, 66, 65, 84, 32, 37, 0, 49, 0, 0, 0, 0, 0, 0, 160,
      65};
 
-// структура определяет все переменные и события вашего интерфейса управления
+// RemoteXY control structure
 struct
 {
     // input variables
-    int8_t speed;      // =0..100 положение слайдера
-    uint8_t light;     // =1 если включено, иначе =0
-    uint8_t horn;      // =1 если кнопка нажата, иначе =0
-    uint8_t direction; // =1 если переключатель включен и =0 если отключен
+    int8_t speed;      // =0..100 slider "speed"
+    uint8_t light;     // =1 if "light" is on
+    uint8_t horn;      // =1 if "horn" is on
+    uint8_t direction; // =1 if "fw" else 0 for "rw"
 
     // output variables
-    int8_t bat; // oт 0 до 100
+    int8_t bat; // Battery level: 0..100
 
     // other variable
     uint8_t connect_flag; // =1 if wire connected, else =0
@@ -110,6 +104,8 @@ void reset_device()
     RemoteXY.speed = 0;
     RemoteXY.direction = 1;
 
+    RemoteXY.bat = battery.level();
+
     state.speed = 0;
     state.direction = 1;
 
@@ -133,7 +129,7 @@ void setup()
     float ratio = 2.7400;
     battery.begin(3300, ratio);
 
-    // TODO you setup code
+    // Prepare LED output
     pinMode(LED, OUTPUT);
 
     // Prepare PWM output
@@ -156,11 +152,18 @@ void loop()
 {
     RemoteXY_Handler();
 
-    // TODO you loop code
-    // используйте структуру RemoteXY для передачи данных
-    // не используйте функцию delay(), вместо нее используйте RemoteXY_delay()
+    // Do not use delay() here, only RemoteXY_delay()
 
-    RemoteXY.bat = battery.level();
+    // Battery read control: read time-to-time
+    // millis() will overflow in ~50 days runtime, assume that battery-powered
+    // device will never has uptime like that
+    unsigned long ms = millis();
+    if (battery_read_ms < ms) {
+        RemoteXY.bat = battery.level();
+        // Next read with timeout -> to avoid flapping
+        battery_read_ms = ms + BATTERY_READ_TIMOUT_MS;
+    }
+
     digitalWrite(LED, RemoteXY.light);
     ledcWrite(BUZZER_CH, RemoteXY.horn ? 127 : 0);
 
